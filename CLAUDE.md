@@ -1,4 +1,58 @@
-# CLAUDE.md
+# CLAUDE.md — creador-crm
+
+Este documento tiene dos partes. La primera es la **gobernanza de este proyecto** dentro de `proyectos-code/` (nuestra, se mantiene y actualiza aquí). La segunda — desde "Guía técnica de Twenty (upstream, sin modificar)" — es la documentación original que trae el propio repositorio de Twenty para trabajar en su código (comandos de build/test/lint, arquitectura, convenciones); no se toca salvo que cambie aguas arriba, y se sincroniza vía `git pull` desde `origin` (fork propio: `https://github.com/Alexitrup/twenty-crm-base`).
+
+---
+
+## GOBERNANZA — decisiones de este proyecto
+
+### Qué es `creador-crm`
+
+Instancia self-hosted de [Twenty](https://twenty.com) (CRM open-source, AGPLv3 + módulos bajo licencia comercial marcados aparte), clonada como fork propio y ejecutada vía Docker Compose (`packages/twenty-docker/docker-compose.yml`). Pensada como base para ofrecer CRM a clientes de `creador-web/`: cada cliente, cuando corresponda, tendría su propia instancia/despliegue — no un multi-tenant compartido por defecto.
+
+### Arranque local
+
+```bash
+cd packages/twenty-docker
+docker compose up -d      # requiere .env (ver .env.example) — ya existe uno local, no versionado
+docker compose ps         # server, worker, db, redis
+```
+
+Server en `http://localhost:3000`. El `.env` local se generó a partir de `.env.example` con un `ENCRYPTION_KEY` propio (`openssl rand -base64 32`); no está commiteado (cae bajo el `.gitignore` del propio repo de Twenty).
+
+### Decisión: no borrar los archivos con `/* @license Enterprise */`
+
+315 archivos del código fuente llevan este comentario (verificado el 2026-08-18 con `grep -rl "@license Enterprise"`, excluyendo `.yarn/`). Reparto principal:
+
+| Carpeta | Archivos |
+|---|---|
+| `packages/twenty-server/src/engine/core-modules/billing` | 119 |
+| `packages/twenty-front/src/modules/settings` | 45 |
+| `packages/twenty-server/src/engine/metadata-modules` | 25 |
+| `packages/twenty-server/src/engine/core-modules/billing-webhook` | 22 |
+| `packages/twenty-server/src/engine/core-modules/usage` | 15 |
+| `packages/twenty-server/src/engine/core-modules/sso` | 14 |
+| `packages/twenty-server/src/engine/core-modules/event-logs` | 12 |
+| `packages/twenty-server/src/engine/workspace-manager` (row-level permissions) | 12 |
+| `packages/twenty-server/src/engine/core-modules/auth` | 10 |
+| `packages/twenty-server/src/engine/core-modules/enterprise` | 9 |
+| `packages/twenty-shared/src/types` (row-level permissions) | 5 |
+| resto (jwt, emailing-domain, cloudflare, dns-manager, twenty-orm, front/auth, front/object-record, front/pages, server/database/commands, test, LICENSE) | 27 |
+
+**Por qué se conservan:** Twenty gatea estas funciones en tiempo de ejecución mediante la variable `ENTERPRISE_KEY` (JWT firmado, validado en `EnterprisePlanService.hasValidSignedEnterpriseKey()` / `isValid()`, en `packages/twenty-server/src/engine/core-modules/enterprise/services/enterprise-plan.service.ts`). Sin esa clave, el código queda compilado pero inactivo — no aporta ninguna función extra estando presente. Borrarlo solo generaría divergencia con el upstream de Twenty (conflictos en cada `git pull`/actualización) sin ninguna ganancia funcional, y complicaría reactivarlo el día que un cliente sí compre licencia.
+
+**Cómo aplicarla en la práctica:** nunca tocar ni eliminar archivos marcados `@license Enterprise` como parte de una "limpieza" o "reducir código no usado". Si en algún momento se vuelve a cuestionar, releer esta sección antes de actuar.
+
+### Norma: `ENTERPRISE_KEY` nunca se configura salvo compra explícita para un cliente concreto
+
+- Por defecto, ninguna instancia de `creador-crm` — ni la de desarrollo/pruebas ni ninguna futura de cliente — debe tener `ENTERPRISE_KEY` en su `.env` ni en su `docker-compose`. El `docker-compose.yml` de este repo no la referencia en absoluto; así debe mantenerse mientras esta norma siga vigente.
+- La única excepción es cuando un cliente concreto compra explícitamente una licencia Enterprise de Twenty para su propio despliegue. En ese caso: (1) la clave se configura solo en la instancia de ESE cliente, nunca en la de desarrollo ni en la de otro cliente; (2) se documenta qué cliente, qué instancia y fecha de alta de la licencia — aquí mientras no haya `CONTEXTO_[Cliente].md` propio, y en ese archivo cuando exista.
+- **Por qué:** activar funciones Enterprise (billing, SSO, permisos a nivel de fila, límites de uso, etc.) sin que el cliente las haya pagado sería usar código bajo licencia comercial sin la licencia correspondiente — no es una cuestión técnica sino contractual/legal, y la clave es exactamente el mecanismo que Twenty usa para verificarlo contra su propia API.
+- Ningún cliente tiene, a día de hoy (2026-08-18), licencia Enterprise comprada. Ver `CONTEXTO_TwentyCRM.md` para el estado vivo de este listado.
+
+---
+
+## Guía técnica de Twenty (upstream, sin modificar)
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
